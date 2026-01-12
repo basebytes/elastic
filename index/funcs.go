@@ -7,6 +7,24 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+func Decode(input, output any) error {
+	decoderConfig := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		DecodeHook:       decodeHook,
+		Result:           output,
+	}
+	decoder, err := mapstructure.NewDecoder(decoderConfig)
+	if err == nil {
+		err = decoder.Decode(input)
+	}
+	return err
+}
+
+var decodeHook = mapstructure.ComposeDecodeHookFunc(
+	entity.BucketsMapToSliceHookFunc(),
+	entity.AnyToStringHookFunc(),
+	entity.SettingItemHookFunc())
+
 type SkipFieldFunc func(string) bool
 
 type CollectFunc func(map[string]any) map[string]any
@@ -24,7 +42,7 @@ func ExtractAggResult(aggs *entity.Aggregations, lastField string, skip SkipFiel
 		return
 	}
 	for key, agg := range *aggs {
-		if skip != nil && skip(key) {
+		if key == Item || (skip != nil && skip(key)) {
 			for k, value := range agg.Other {
 				if innerAggs := transToAggs(k, value); innerAggs != nil {
 					return ExtractAggResult(innerAggs, lastField, skip, collect)
@@ -61,13 +79,13 @@ func ExtractAggResult(aggs *entity.Aggregations, lastField string, skip SkipFiel
 	return
 }
 
-func extractStatistics(aggs *entity.Aggregations, skipField func(field string) bool) (map[string]any, byte) {
+func extractStatistics(aggs *entity.Aggregations, skipField SkipFieldFunc) (map[string]any, byte) {
 	var (
 		result    = make(map[string]any)
 		imprecise byte
 	)
 	for key, agg := range *aggs {
-		if skipField != nil && skipField(key) {
+		if key == Item || (skipField != nil && skipField(key)) {
 			for k, value := range agg.Other {
 				if innerAggs := transToAggs(k, value); innerAggs != nil {
 					res, _imprecise := extractStatistics(innerAggs, skipField)
@@ -113,23 +131,5 @@ func transToAggs(key string, value any) *entity.Aggregations {
 	}
 	return nil
 }
-
-func Decode(input, output any) error {
-	decoderConfig := &mapstructure.DecoderConfig{
-		WeaklyTypedInput: true,
-		DecodeHook:       decodeHook,
-		Result:           output,
-	}
-	decoder, err := mapstructure.NewDecoder(decoderConfig)
-	if err == nil {
-		err = decoder.Decode(input)
-	}
-	return err
-}
-
-var decodeHook = mapstructure.ComposeDecodeHookFunc(
-	entity.BucketsMapToSliceHookFunc(),
-	entity.AnyToStringHookFunc(),
-	entity.SettingItemHookFunc())
 
 const zeroValue = "0"
